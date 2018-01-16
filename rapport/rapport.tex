@@ -1,0 +1,225 @@
+\documentclass[a4paper,12pt,DIV=16]{scrreprt}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[francais]{babel}
+
+%opening
+\title{Rapport de TP:\@ TP3 modélisation du fonctionnement d'un musée}
+\author{Lucas SCHOTT}
+
+\begin{document}
+
+
+    \maketitle
+
+
+    \section*{Introduction}
+     
+    \\
+
+    Le but de ce TP est de modéliser le fonctionnement d'un musée à l’aide de
+    processus, matérialisés par des commandes indépendantes travaillant sur un
+    ensemble d’objets IPC System V (mémoire partagée et sémaphores).\\
+
+    Cette modélisation est composé de trois entitées qui effectuent différentes
+    actions:\\
+    Il y a un directeur qui peut créer un musée, l'ouvrir, le fermer
+    et le supprimer.\\
+    Un contrôleur qui contrôle les entrées et sorties des
+    visiteurs pour éviter qu'il n'y ai trop de visiteurs en même temps dans le
+    musée.\\
+    Et des visiteurs qui viennent visiter le musée.\\ \\
+
+
+    Le modèle fonctionne de la manière suivante:
+    \begin{itemize}
+        \item   Le directeur crée un musée, puis peut l'ouvrir et le fermer
+            autant de fois qu'il veut, puis il peut le supprimer.
+        \item   Le contrôleur doit être en poste avant l'ouverture du musée,
+            une fois le musée ouvert, il contrôle les entrées et sorties des
+            visiteurs. Il fait entrer dans le musée un visiteur qui est dans le
+            file d'attente uniquement s'il y a de la place dans le musée. Quand
+            le musée ferme, il arrête de faire entrer des visiteurs, et attend
+            que tous les visiteur déjà dans le musée soient sortie. Une fois
+            qu'il n'y a plus de visiteurs dans le musée, le contrôleur quitte
+            son poste (il faut mettre un nouveau contrôleur en poste avant une
+            réouverture du musée).
+        \item   Le visiteur arrive aux abords du musée. Si le musée est fermé
+            le visiteur attend son ouverture. Quand le musée est ouvert le
+            visiteur regarde la file d'attente, si la file d'attente est
+            pleine, le visiteur s'en va, alors que s'il ya de place dans la
+            file, le visiteur y prend place. Une fois dans la file, le visiteur
+            demande au contrôleur l'autorisation d'entrer dans le musée. Cette
+            autorisation lui est accordé une fois qu'il y a de la place dans le
+            musée. Une fois dans le musée, le visiteur y reste un certain
+            temps, puis en sort quand il a fini de visiter.
+    \end{itemize}
+
+
+    \section*{Utilisation}
+
+    Les commandes sont les suivantes:
+    \begin{itemize}
+        \item \textit{directeur creer <capacité\_musée> <capacité\_file>}\\
+            \textit{directeur ouvrir}\\
+            \textit{directeur fermer}\\
+            \textit{directeur supprimer}\\
+             effectue les différentes actions du directeur.
+        \item \textit{controleur}\\
+            met un controleur en poste.
+        \item \textit{visiteur <durée\_de\_visite\_en\_ms>}\\
+            envoie un visiteur visiter le musée.
+        \item \textit{dump}\\
+            affiche les valeurs courantes des sémaphores (utile pour le débugage).
+    \end{itemize}
+
+     \\
+
+    La variable d'environnement \emph{DEBUG\_MUSEE} peut être utiliser pour influer sur l'affichage
+    des commandes. Si la variable n'existe pas ou si elle vaut 0, alors les commandes n'affichent
+    aucun message, à part les messages d'erreurs. Si \emph{DEBUG\_MUSEE} vaut 1, les programmes
+    afficheront les etapes importantes des différents acteurs. Et si elle vaut 2 ou plus,
+    les programmes afficheront tous les détails des actions des acteurs dont les étapes de synchornisation.
+
+    \section*{Implementation}
+
+
+    \subsection*{Mémoire partagée}
+
+    Une structure \emph{musee} est placé en mémoire partagé à la création du musée, elle contient
+    un booléen \emph{ouvert} indiquant si le musée est ouvert, et un entier \emph{capacite} indiquant
+    la capacité maximum du musée.
+
+    \subsection*{Sémaphores}
+
+    Pour sychoniser les différents acteurs du musée, j'ai utilisé un ensemble de sept sémaphores:
+    \begin{itemize}
+        \item \emph{OUVERTURE\_SEM} initialisé à 0.\\
+            Si le musée n'est pas ouvert les visiteurs et le controleur font un P (avec attente)
+            en attendant l'ouverture du musée.\\
+            Lors de l'ouverture du musée le directeur fait autant de V qu'il y a de processus
+            qui attendent l'ouverture du musée.
+        \item \emph{FILE\_SEM} initialisé au nombre maximum de places disponibles dans la file.\\
+            Le visiteur fait un P (sans attente) au moment de rentrer dans le file,
+            s'il y a de la place il y entre, sinon il s'en va.
+            Une fois la valeur du sémaphore à 0 la file d'attente est pleine.\\
+            Le controleur fait un V lorsqu'il fait entrer un visiteur dans le musée, ce qui libère
+            une place dans la file d'attente.
+        \item \emph{VISITE\_SEM} initialisé au nombre maximum de visiteus simultanés dans le musée.\\
+            Le controleur fait un P (avec attente) lorqu'il fait entrer un visiteur dans le musée.
+            Si le musée est plein, le controleur attend qu'une place se libère.\\
+            Le visiteur fait un V lorsqu'il quitte le musée, ce qui libère une place dans le musée.
+        \item \emph{ENTREE\_SEM} initialisé à 0.\\
+            Le visiteur fait un P (avec attente) pour demander au controleur l'autorisation d'entrer
+            dans le musée.\\
+            Le controleur fait un V lorqu'il fait entrer un visiteur.
+        \item \emph{TRAVAIL\_SEM} initialisé à 0.\\
+            Le controleur fait un P (avec attente) pour attendre du travail.\\
+            Le visiteur fait un V pour indiquer au controleur qu'il veux effectuer une action, soit
+            entrer dans le musée, soit sortir du musée.
+        \item \emph{VEUX\_ENTRER\_SEM} initialisé à 0.\\
+            Le controleur fait un P (sans attente) pour voir si un visiteur veux entrer dans le musée.\\
+            Le visiteur fait un V lorqu'il souhaite entrer dans le musée, pour prévenir le controleur.
+        \item \emph{VEUX\_SORTIR\_SEM} initialisé à 0.\\
+            Le controleur fait un P (sans attente) pour voir si un visiteur veux sortir du  musée.\\
+            Le visiteur fait un V lorqu'il souhaite sortir du musée, pour prévenir le controleur.
+    \end{itemize}
+    \newpage
+
+    \subsection*{Synchronisation}
+
+    Le visiteur:
+    \begin{itemize}
+        \item Au lancement si le musée est fermé, il va faire un P de \emph{OUVERTURE\_SEM} qui va attendre
+            que le musée ouvre.
+        \item Il va ensuite faire un P (sans attente) de \emph{FILE\_SEM}, s'il arrive à entrer dans le
+            sémaphore alors il est dans la file, sinon il s'en va et le processus se termine.
+        \item S'il est dans la file d'attente, il fait un V de \emph{VEUX\_ENTRER\_SEM} puis un V de
+            \emph{TRAVAIL\_SEM} pour signaler au controleur que celui ci doit le faire entrer dans le musée.\\
+            Le V sont executés dans cette ordre car si V de \emph{TRAVAIL\_SEM} était executé avant V de
+            \emph{VEUX\_ENTRER\_SEM} et que le quantum de temps processeur s'arrète entre les deux V.
+            Alors le controleur ne peut pas savoir quelle travail il a à executer (faire entrer un
+            visiteur ou le faire sortir). Dans ce cas il se remetterai en attente de travail sans
+            prendre en compte la volonté de ce visiteur d'entrer.\\
+            Mon implémentation protège de ce cas particulier en indiquant, avant même de réveiller
+            le controleur, quelle action il aura à traiter à son réveil.
+        \item Il demande ensuite l'autorisation d'entrer dans le musée en faisant un P (avec attente)
+            de \emph{ENTREE\_SEM}.
+        \item Une fois que le contrôleur l'a fait entrer dans le musée, le visiteur reste dans le
+            musée, puis fait un V de \emph{VEUX\_SORTIR\_SEM} puis un V de \emph{TRAVAIL\_SEM}. Les V sont
+            effectués dans cette ordre pour la même raison que lors de l'entrée dans le musée.
+        \item Et pour finir le visiteur fait un V de \emph{VISITE\_SEM} pour indiquer sa sortie du musée,
+            et libérer une place.
+    \end{itemize}
+
+     \\
+
+    Le contrôleur:
+    \begin{itemize}
+        \item Au lancement il fait un P de \emph{OUVERTURE\_SEM} pour attendre que le musée ouvre.
+        \item Ensuite, tant que le musée est ouvert:
+            \begin{itemize}
+                \item Il fait un P de \emph{TRAVAIL\_SEM} pour attendre du travail.
+                \item Puis il fait un P (sans attente) de \emph{VEUX\_ENTRER\_SEM} pour voir si un
+                    visiteur veux entrer dans le musée (si le visiteur a fait un V de
+                    \emph{VEUX\_ENTRER\_SEM}).
+                \item Si un visiteur veux entrer dans le musée, le contrôleur fait un P (avec
+                    attente) de \emph{VISITE\_SEM} pour faire entrer le visiteur dans le musée
+                    dès qu'il y a de la place. Il fait ensuite un V de \emph{FILE\_SEM} et un V de
+                    \emph{ENTREE\_SEM}, pour indiquer qu'une place se libère dans le file d'attente
+                    et pour débloquer le processus visiteur.
+                \item Ensuite le contrôleur fait un P (sans attente) de \emph{VEUX\_SORTIR\_SEM} pour
+                    afficher un message quand un visiteur sort du musée selon la valeur de la
+                    variable d'environnement \emph{DEBUG\_MUSEE}.
+            \end{itemize}
+        \item Une fois que le musée est fermé, tant que la valeur du sémaphore \emph{VISITE\_SEM}
+            est inférieur à la capacité maximal du musée (lue dans la mémoire partagée).
+            \begin{itemize}
+                \item Le contrôleur fait un P de \emph{TRAVAIL\_SEM} pour attendre du travail.
+                \item Puis il fait un P (sans attente) de \emph{VEUX\_SORTIR\_SEM} pour voir si
+                    un visiteur veux sortir et afficher un message en conséquence.
+            \end{itemize}
+        \item Une fois que tous les visiteur sont sortie du musée, le contrôleur se termine.
+    \end{itemize}
+
+    \newpage
+
+    Le directeur:
+    \begin{itemize}
+        \item S'il est executé avec l'argument creer ou avec l'argument supprimer, aucun mecanisme
+            de synchronisation n'intervient.
+        \item Avec l'argument ouvrir: le directeur lis le nombre de processus qui attendent
+            l'ouverture du musée, et fait V de \emph{OUVERTURE\_SEM} tant qu'il y a des
+            processus qui attendent. Puis directeur si termine.
+        \item Avec l'argument fermer: le directeur défini la valeur de \emph{OUVERTURE\_SEM} à
+            zéro, et fait un V de \emph{TRAVAIL\_SEM} pour que le directeur qui est en attente de
+            travail, remarque la fermeture du musée. Puis le directeur se termine.
+    \end{itemize}
+
+    \section*{Tests}
+
+    Tous les scriptes de test fournis avec le sujet ont été éxécutés avec succès et sans
+    fuite de mémoire.
+    J'ai créé un scripte de test supplémentaire qui teste différents cas particuliers:
+    \begin{itemize}
+        \item La syntaxe \textit{directeur xxx xxx xxx}.
+        \item La creation de plusieurs musées successifs dans suppression.
+        \item La commande \textit{dump}.
+        \item La fermeture d'un musée pendant que des visiteurs sont à l'intérieur.
+    \end{itemize}
+
+    \ \\
+
+    La couverture de code lors des tests est de 93.28\%, seuls les cas où le système plante ne
+    sont pas couvert par les tests.
+
+
+    \section*{Conclusion}
+
+    
+    Ce TP a été très intéressant à réaliser, il m'a beaucoup fait réflechire
+    et j'y ai passé de nombreuses heures. Il m'a beaucoup appris sur la
+    synchronisation des processus et les différentes utilisations des
+    sémaphores.
+
+\end{document}
