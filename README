@@ -1,0 +1,129 @@
+modélisation du fonctionnement d'un musée
+
+Introduction:
+-----------------------------------------------------------------------------------------
+     
+
+
+Le but de ce TP est de modéliser le fonctionnement d'un musée à l’aide de
+processus, matérialisés par des commandes indépendantes travaillant sur un
+ensemble d’objets IPC System V (mémoire partagée et sémaphores).\\
+
+Cette modélisation est composé de trois entitées qui effectuent différentes
+actions:
+Il y a un directeur qui peut créer un musée, l'ouvrir, le fermer
+et le supprimer.
+Un contrôleur qui contrôle les entrées et sorties des
+visiteurs pour éviter qu'il n'y ai trop de visiteurs en même temps dans le
+musée.
+Et des visiteurs qui viennent visiter le musée.
+
+
+Le modèle fonctionne de la manière suivante:
+  - Le directeur crée un musée, puis peut l'ouvrir et le fermer
+      autant de fois qu'il veut, puis il peut le supprimer.
+  - Le contrôleur doit être en poste avant l'ouverture du musée,
+      une fois le musée ouvert, il contrôle les entrées et sorties des
+      visiteurs. Il fait entrer dans le musée un visiteur qui est dans le
+      file d'attente uniquement s'il y a de la place dans le musée. Quand
+      le musée ferme, il arrête de faire entrer des visiteurs, et attend
+      que tous les visiteur déjà dans le musée soient sortie. Une fois
+      qu'il n'y a plus de visiteurs dans le musée, le contrôleur quitte
+      son poste (il faut mettre un nouveau contrôleur en poste avant une
+      réouverture du musée).
+  - Le visiteur arrive aux abords du musée. Si le musée est fermé
+      le visiteur attend son ouverture. Quand le musée est ouvert le
+      visiteur regarde la file d'attente, si la file d'attente est
+      pleine, le visiteur s'en va, alors que s'il ya de place dans la
+      file, le visiteur y prend place. Une fois dans la file, le visiteur
+      demande au contrôleur l'autorisation d'entrer dans le musée. Cette
+      autorisation lui est accordé une fois qu'il y a de la place dans le
+      musée. Une fois dans le musée, le visiteur y reste un certain
+      temps, puis en sort quand il a fini de visiter.
+    
+
+
+Utilisation:
+---------------------------------------------------------------------------------------
+
+Les commandes sont les suivantes:
+
+
+$ directeur creer <capacité\_musée> <capacité\_file>
+$ directeur ouvrir
+$ directeur fermer
+$ directeur supprimer
+
+effectue les différentes actions du directeur.
+
+
+$ controleur
+
+met un controleur en poste.
+
+
+$ visiteur <durée_de_visite_en_ms>
+
+envoie un visiteur visiter le musée.
+
+
+$ dump
+
+affiche les valeurs courantes des sémaphores (utile pour le débugage).
+
+
+La variable d'environnement \emph{DEBUG\_MUSEE} peut être utiliser pour influer sur l'affichage
+des commandes. Si la variable n'existe pas ou si elle vaut 0, alors les commandes n'affichent
+aucun message, à part les messages d'erreurs. Si \emph{DEBUG\_MUSEE} vaut 1, les programmes
+afficheront les etapes importantes des différents acteurs. Et si elle vaut 2 ou plus,
+les programmes afficheront tous les détails des actions des acteurs dont les étapes de synchornisation.
+
+
+
+Implementation:
+------------------------------------------------------------------------------------------------------
+
+
+Mémoire partagée:
+------------------------------------------------------------------------------------------------------
+
+Une structure musee est placé en mémoire partagé à la création du musée, elle contient
+un booléen ouvert indiquant si le musée est ouvert, et un entier \emph{capacite} indiquant
+la capacité maximum du musée.
+
+
+
+Sémaphores:
+-----------------------------------------------------------------------------------------------------
+
+Pour sychoniser les différents acteurs du musée, j'ai utilisé un ensemble de sept sémaphores:
+  - OUVERTURE_SEM initialisé à 0.
+      Si le musée n'est pas ouvert les visiteurs et le controleur font un P (avec attente)
+      en attendant l'ouverture du musée.
+      Lors de l'ouverture du musée le directeur fait autant de V qu'il y a de processus
+      qui attendent l'ouverture du musée.
+  - FILE_SEM initialisé au nombre maximum de places disponibles dans la file.
+      Le visiteur fait un P (sans attente) au moment de rentrer dans le file,
+      s'il y a de la place il y entre, sinon il s'en va.
+      Une fois la valeur du sémaphore à 0 la file d'attente est pleine.
+      Le controleur fait un V lorsqu'il fait entrer un visiteur dans le musée, ce qui libère
+      une place dans la file d'attente.
+  - VISITE_SEM initialisé au nombre maximum de visiteus simultanés dans le musée.
+      Le controleur fait un P (avec attente) lorqu'il fait entrer un visiteur dans le musée.
+      Si le musée est plein, le controleur attend qu'une place se libère.
+      Le visiteur fait un V lorsqu'il quitte le musée, ce qui libère une place dans le musée.
+  - ENTREE_SEM initialisé à 0.
+      Le visiteur fait un P (avec attente) pour demander au controleur l'autorisation d'entrer
+      dans le musée.
+      Le controleur fait un V lorqu'il fait entrer un visiteur.
+  - TRAVAIL_SEM initialisé à 0.
+      Le controleur fait un P (avec attente) pour attendre du travail.
+      Le visiteur fait un V pour indiquer au controleur qu'il veux effectuer une action, soit
+      entrer dans le musée, soit sortir du musée.
+  - VEUX_ENTRER_SEM initialisé à 0.
+      Le controleur fait un P (sans attente) pour voir si un visiteur veux entrer dans le musée.
+      Le visiteur fait un V lorqu'il souhaite entrer dans le musée, pour prévenir le controleur.
+  - VEUX_SORTIR_SEM initialisé à 0.
+      Le controleur fait un P (sans attente) pour voir si un visiteur veux sortir du  musée.
+      Le visiteur fait un V lorqu'il souhaite sortir du musée, pour prévenir le controleur.
+ 
